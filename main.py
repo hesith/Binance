@@ -1,7 +1,6 @@
 from trade_client import *
 from store_order import *
 from load_config import *
-from chart.charting import *
 
 from datetime import datetime, time
 import time
@@ -198,8 +197,37 @@ def get_price(coin, pairing):
 # if __name__ == '__main__':
 #     main()
 
+candles = []
 
+def appendCandle(hr, min, lastPrice):
+    candleOpenTime = str(hr)+":"+str(min)
+    candleOpen = lastPrice
+    candles.append({'candleOpenTime':candleOpenTime,'candleOpen':candleOpen})     
 
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+def checkLastCandlePerformance():
+    isRed = False
+    if( len(candles) > 1 ):
+        print(str(candles[-1]['candleOpen'])+ " - " +str(candles[-2]['candleOpen']) + " is " + str(float(candles[-2]['candleOpen']) - float(candles[-1]['candleOpen'])))
+
+        if((float(candles[-1]['candleOpen']) - float(candles[-2]['candleOpen'])) > 0):
+            isRed = False
+        else:
+            isRed = True
+        return ("Last candle is "+ (bcolors.OKGREEN+"Green"+bcolors.ENDC)) if(isRed == False) else ("Last candle is "+ (bcolors.FAIL+"Red"+bcolors.ENDC))
+    else:
+        return "Tracking candles.."
+    
 def main():
     while True:
         time.sleep(0.009)
@@ -214,13 +242,22 @@ def main():
             print("Minute: ", min)
             print("Second: ", sec)
 
-            print(client.get_ticker(symbol='BTCUSDT')['lastPrice'])
+            lastPrice = client.get_ticker(symbol='SUIUSDT')['lastPrice'];
+            print(lastPrice)
 
-            if(sec == 0):
-                print("A minute has passed")             
+            print(candles)
+            print("Length", len(candles))
+            if(sec == 0): #MINUTE
+                print("A minute has passed")  
 
-            if(min % 5 == 0 and sec == 0):
+                appendCandle(hr=hr, min = min, lastPrice = lastPrice)
+                print(checkLastCandlePerformance())       
+
+            if(min % 5 == 0 and sec == 0): #5MINUTES
                 print("5 minutes have passed")
+
+
         
 if __name__ == '__main__':
     main()
+
