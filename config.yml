@@ -1,0 +1,21 @@
+---
+  TRADE_OPTIONS:
+    # In your pairing coin
+    QUANTITY: 15
+    # BTCUSDT will be bought for example
+    PAIRING: USDT
+    # How often to check for posts and run the script
+    # in minutes
+    RUN_EVERY: 0.3
+    # Test mode, set to false to use the live Binance account
+    TEST: True
+    #Stop loss in %
+    SL: 3
+    # Take profit in %
+    TP: 9
+    # Enable Trailing Stop Loss
+    ENABLE_TSL: True
+    # Trailing Stop in % from the current price
+    TSL: 0.5
+    # Trailing profit in % from the current price
+    TTP: 1
