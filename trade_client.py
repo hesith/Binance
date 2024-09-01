@@ -1,3 +1,5 @@
+from datetime import datetime
+import math
 from auth.binance_auth import *
 
 client = load_binance_creds('auth/auth.yml')

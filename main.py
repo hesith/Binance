@@ -13,7 +13,40 @@ import os.path
 config = load_config('config.yml')
 
 
+class timeframe:
+    ONE_MIN = '1m'
+    THREE_MIN = '3m'
+    FIVE_MIN = '5m'
+    TEN_MIN = '10m'
+    FIFTEEN_MIN = '15m'
+    THIRTY_MIN = '30m'
+    FORTY_FIVE_MIN = '45m'
+    ONE_HOUR = '1h'
+    TWO_HOUR = '2h'
+    THREE_HOUR = '3h'
+    FOUR_HOUR = '4h'
 
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+
+
+#Variables
+targetSymbol = 'HARD'+'USDT'
+targetTimeframe = timeframe.ONE_MIN
+targetInvestment = 10
+
+#Fields
+candles = []
+candleQueue = ['R','R','R']
 
 
 def get_all_coins():
@@ -197,23 +230,18 @@ def get_price(coin, pairing):
 # if __name__ == '__main__':
 #     main()
 
-candles = []
+def sendBuyOrder():
+    return client.create_test_order(symbol = targetSymbol, side = 'BUY', type = 'MARKET', quoteOrderQty = float(targetInvestment))
+
+def sendSellOrder(lastPrice):
+    return client.create_test_order(symbol = targetSymbol, side = 'SELL', type = 'MARKET', quoteOrderQty = float(targetInvestment*lastPrice))
 
 def appendCandle(hr, min, lastPrice):
     candleOpenTime = str(hr)+":"+str(min)
     candleOpen = lastPrice
     candles.append({'candleOpenTime':candleOpenTime,'candleOpen':candleOpen})     
 
-class bcolors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKCYAN = '\033[96m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
+
 
 def checkLastCandlePerformance():
     isRed = False
@@ -224,6 +252,13 @@ def checkLastCandlePerformance():
             isRed = False
         else:
             isRed = True
+
+        if(isRed == True):
+            candleQueue.append("R")
+        else:
+            candleQueue.append("G")
+
+
         return ("Last candle is "+ (bcolors.OKGREEN+"Green"+bcolors.ENDC)) if(isRed == False) else ("Last candle is "+ (bcolors.FAIL+"Red"+bcolors.ENDC))
     else:
         return "Tracking candles.."
@@ -242,19 +277,26 @@ def main():
             print("Minute: ", min)
             print("Second: ", sec)
 
-            lastPrice = client.get_ticker(symbol='SUIUSDT')['lastPrice'];
+            lastPrice = client.get_ticker(symbol=targetSymbol)['lastPrice']
             print(lastPrice)
 
-            print(candles)
-            print("Length", len(candles))
-            if(sec == 0): #MINUTE
-                print("A minute has passed")  
+            #print(candles)
+            print(candleQueue)
 
-                appendCandle(hr=hr, min = min, lastPrice = lastPrice)
-                print(checkLastCandlePerformance())       
+            if(targetTimeframe == timeframe.ONE_MIN):
+                if(sec == 0): #MINUTE
+                    print("A minute has passed")  
 
-            if(min % 5 == 0 and sec == 0): #5MINUTES
-                print("5 minutes have passed")
+                    appendCandle(hr=hr, min = min, lastPrice = lastPrice)
+                    print(checkLastCandlePerformance())       
+                    
+                    if(len(candleQueue) > 3):
+                        if(candleQueue[-1] == 'G' and candleQueue[-2] == 'R' and candleQueue[-3] == 'R' and candleQueue[-4] == 'R'):
+                            print(sendBuyOrder())
+
+            elif(targetTimeframe == timeframe.FIVE_MIN):
+                if(min % 5 == 0 and sec == 0): #5MINUTES
+                    print("5 minutes have passed")
 
 
         
