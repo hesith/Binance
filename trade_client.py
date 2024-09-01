@@ -4,7 +4,7 @@ from auth.binance_auth import *
 
 client = load_binance_creds('auth/auth.yml')
 
-
+print(client.get_account_api_permissions())
 def convert_volume(coin, quantity, last_price):
         """Converts the volume given in QUANTITY from USDT to the each coin's volume"""
 

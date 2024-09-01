@@ -46,7 +46,7 @@ targetInvestment = 10
 
 #Fields
 candles = []
-candleQueue = ['R','R','R']
+candleQueue = []
 
 
 def get_all_coins():
@@ -231,10 +231,10 @@ def get_price(coin, pairing):
 #     main()
 
 def sendBuyOrder():
-    return client.create_test_order(symbol = targetSymbol, side = 'BUY', type = 'MARKET', quoteOrderQty = float(targetInvestment))
+    return client.create_order(symbol = targetSymbol, side = 'BUY', type = 'MARKET', quoteOrderQty = float(targetInvestment))
 
 def sendSellOrder(lastPrice):
-    return client.create_test_order(symbol = targetSymbol, side = 'SELL', type = 'MARKET', quoteOrderQty = float(targetInvestment*lastPrice))
+    return client.create_order(symbol = targetSymbol, side = 'SELL', type = 'MARKET', quoteOrderQty = float(targetInvestment*lastPrice))
 
 def appendCandle(hr, min, lastPrice):
     candleOpenTime = str(hr)+":"+str(min)
