@@ -48,6 +48,9 @@ targetInvestment = 10
 candles = []
 candleQueue = []
 
+isBought = False
+boughtQty = '0.0'
+slTp = '9999999.0'
 
 def get_all_coins():
     """
@@ -233,14 +236,15 @@ def get_price(coin, pairing):
 def sendBuyOrder():
     return client.create_order(symbol = targetSymbol, side = 'BUY', type = 'MARKET', quoteOrderQty = float(targetInvestment))
 
-def sendSellOrder(lastPrice):
-    return client.create_order(symbol = targetSymbol, side = 'SELL', type = 'MARKET', quoteOrderQty = float(targetInvestment*lastPrice))
+def sendSellOrder():
+    if(float(boughtQty) > 0):
+        return client.create_order(symbol = targetSymbol, side = 'SELL', type = 'MARKET', quantity = float(boughtQty))
+    return
 
 def appendCandle(hr, min, lastPrice):
     candleOpenTime = str(hr)+":"+str(min)
     candleOpen = lastPrice
-    candles.append({'candleOpenTime':candleOpenTime,'candleOpen':candleOpen})     
-
+    candles.append({'candleOpenTime':candleOpenTime,'candleOpen':candleOpen})   
 
 
 def checkLastCandlePerformance():
@@ -258,12 +262,36 @@ def checkLastCandlePerformance():
         else:
             candleQueue.append("G")
 
+        if(len(candleQueue) > 40):
+            candleQueue.pop(0)
 
         return ("Last candle is "+ (bcolors.OKGREEN+"Green"+bcolors.ENDC)) if(isRed == False) else ("Last candle is "+ (bcolors.FAIL+"Red"+bcolors.ENDC))
     else:
         return "Tracking candles.."
-    
+
+
+def writeProfits(order, timestamp):
+    if(str(order['status']) == 'FILLED' ):
+        global isBought 
+        global boughtQty 
+        global slTp
+
+        if(str(order['side']) == 'BUY'):
+            isBought = True
+            boughtQty = order['origQty']
+            slTp = candles[-2]['candleOpen']
+        else:
+            isBought = False
+            slTp = '9999999.99'
+
+        with open('profitLog.txt', 'a') as the_file:
+            the_file.write(str(timestamp) + ' ' + str(order['symbol']) + ' ' + str(order['origQty']) + ' ' + str(order['side']) + ' ' + str(order['cummulativeQuoteQty']) + '\n')
+
 def main():
+    global isBought
+    global slTp
+
+
     while True:
         time.sleep(0.009)
         currentTime = datetime.now()
@@ -278,6 +306,14 @@ def main():
             print("Second: ", sec)
 
             lastPrice = client.get_ticker(symbol=targetSymbol)['lastPrice']
+
+            print(isBought)
+            print(float(lastPrice))
+            print(float(slTp))
+
+            if(isBought == True and (float(lastPrice) <= float(slTp)) ):
+                writeProfits(sendSellOrder(), currentTime)
+
             print(lastPrice)
 
             #print(candles)
@@ -290,9 +326,16 @@ def main():
                     appendCandle(hr=hr, min = min, lastPrice = lastPrice)
                     print(checkLastCandlePerformance())       
                     
-                    if(len(candleQueue) > 3):
+                    if(isBought == True and candleQueue[-1] == 'R'):
+                        writeProfits(sendSellOrder(),currentTime)
+                    elif (isBought == True and candleQueue[-1] == 'G'):
+                        slTp = candles[-2]['candleOpen']
+
+                    if(len(candleQueue) > 3 and isBought == False):
                         if(candleQueue[-1] == 'G' and candleQueue[-2] == 'R' and candleQueue[-3] == 'R' and candleQueue[-4] == 'R'):
-                            print(sendBuyOrder())
+                            writeProfits(sendBuyOrder(), currentTime)
+
+                    
 
             elif(targetTimeframe == timeframe.FIVE_MIN):
                 if(min % 5 == 0 and sec == 0): #5MINUTES
