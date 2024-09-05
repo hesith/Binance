@@ -1,3 +1,5 @@
+from multiprocessing.pool import ThreadPool
+from threading import Thread
 from trade_client import *
 from store_order import *
 from load_config import *
@@ -25,6 +27,7 @@ class timeframe:
     TWO_HOUR = '2h'
     THREE_HOUR = '3h'
     FOUR_HOUR = '4h'
+    SIX_HOUR = '6h'
 
 class bcolors:
     HEADER = '\033[95m'
@@ -40,17 +43,23 @@ class bcolors:
 
 
 #Variables
-targetSymbol = 'HARD'+'USDT'
-targetTimeframe = timeframe.ONE_MIN
+quoteCurrency = 'USDT'
+targetSymbol = 'DATA'+ quoteCurrency
+targetTimeframe = timeframe.FIVE_MIN
 targetInvestment = 10
+trendCheckTimeframe = timeframe.SIX_HOUR
 
 #Fields
 candles = []
 candleQueue = []
 
+coinList = []
+
 isBought = False
 boughtQty = '0.0'
 slTp = '9999999.0'
+
+
 
 def get_all_coins():
     """
@@ -269,6 +278,29 @@ def checkLastCandlePerformance():
     else:
         return "Tracking candles.."
 
+trendingCoin = ''
+
+def setTrendingCoin():
+    global trendingCoin
+    for symbol in client.get_all_tickers():
+        if(symbol['symbol'].endswith(quoteCurrency)):
+            coinList.append(symbol['symbol'])
+    
+    gainerPercentage = -99999.9999
+
+    for index, relatedSymbol in enumerate(coinList):
+
+        symbol24hrGain = float(client.get_ticker(symbol=relatedSymbol)['priceChangePercent'])
+        if(index == 0):
+            gainerPercentage = symbol24hrGain
+            continue
+
+        if(symbol24hrGain > gainerPercentage ):
+            gainerPercentage = symbol24hrGain
+            coinList.insert(0, coinList.pop(index))
+
+    trendingCoin = str(coinList[0])
+
 
 def writeProfits(order, timestamp):
     if(str(order['status']) == 'FILLED' ):
@@ -290,7 +322,8 @@ def writeProfits(order, timestamp):
 def main():
     global isBought
     global slTp
-
+    global trendingCoin
+    global targetSymbol
 
     while True:
         time.sleep(0.009)
@@ -301,15 +334,15 @@ def main():
             hr = currentTime.hour
             min = currentTime.minute
             sec = currentTime.second
-            print("Hour: ", hr)
-            print("Minute: ", min)
-            print("Second: ", sec)
+            #print("Hour: ", hr)
+            #print("Minute: ", min)
+            #print("Second: ", sec)
 
             lastPrice = client.get_ticker(symbol=targetSymbol)['lastPrice']
 
-            print(isBought)
-            print(float(lastPrice))
-            print(float(slTp))
+            #print(isBought)
+            #print(float(lastPrice))
+            #print(float(slTp))
 
             if(isBought == True and (float(lastPrice) <= float(slTp)) ):
                 writeProfits(sendSellOrder(), currentTime)
@@ -318,6 +351,11 @@ def main():
 
             #print(candles)
             print(candleQueue)
+
+            if(trendingCoin != ''):
+                if(targetSymbol != trendingCoin and isBought == False):
+                    targetSymbol = trendingCoin
+
 
             if(targetTimeframe == timeframe.ONE_MIN):
                 if(sec == 0): #MINUTE
@@ -341,7 +379,23 @@ def main():
                 if(min % 5 == 0 and sec == 0): #5MINUTES
                     print("5 minutes have passed")
 
+                    appendCandle(hr=hr, min = min, lastPrice = lastPrice)
+                    print(checkLastCandlePerformance())       
 
+                    if(isBought == True and candleQueue[-1] == 'R'):
+                        writeProfits(sendSellOrder(),currentTime)
+                    elif (isBought == True and candleQueue[-1] == 'G'):
+                        writeProfits(sendSellOrder(),currentTime)
+
+                    if(len(candleQueue) > 2 and isBought == False):
+                        if(candleQueue[-1] == 'G' and candleQueue[-2] == 'R' and candleQueue[-3] == 'R'):
+                            writeProfits(sendBuyOrder(), currentTime)
+                    
+            if(trendCheckTimeframe == timeframe.SIX_HOUR):
+                if((hr == 0 or hr % 6 == 0) and min == 0 and sec == 0):
+                    
+                    pool = ThreadPool(processes=1)
+                    pool.apply_async(setTrendingCoin, ()) 
         
 if __name__ == '__main__':
     main()
