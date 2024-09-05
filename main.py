@@ -1,4 +1,6 @@
+from email.mime.text import MIMEText
 from multiprocessing.pool import ThreadPool
+import smtplib
 from threading import Thread
 from trade_client import *
 from store_order import *
@@ -300,13 +302,18 @@ def setTrendingCoin():
             coinList.insert(0, coinList.pop(index))
 
     trendingCoin = str(coinList[0])
+    sendIncomeRepEmail()
 
+txtFilePath = 'profitLog.txt'
 
-def writeProfits(order, timestamp):
+def writeProfits(order, timestamp: datetime):
     if(str(order['status']) == 'FILLED' ):
         global isBought 
         global boughtQty 
         global slTp
+        global txtFilePath
+
+        txtFilePath = str(timestamp.year) + '_' + str(timestamp.month) + '_' + str(timestamp.day) + '_' + 'income_report' + '.txt'
 
         if(str(order['side']) == 'BUY'):
             isBought = True
@@ -316,8 +323,38 @@ def writeProfits(order, timestamp):
             isBought = False
             slTp = '9999999.99'
 
-        with open('profitLog.txt', 'a') as the_file:
-            the_file.write(str(timestamp) + ' ' + str(order['symbol']) + ' ' + str(order['origQty']) + ' ' + str(order['side']) + ' ' + str(order['cummulativeQuoteQty']) + '\n')
+        if(os.path.isfile(txtFilePath)):
+            with open(txtFilePath, 'a') as the_file:
+                the_file.write(str(timestamp) + ' ' + str(order['symbol']) + ' ' + str(order['origQty']) + ' ' + str(order['side']) + ' ' + str(order['cummulativeQuoteQty']) + '\n')
+        else:
+             open(txtFilePath, "x")
+             with open(txtFilePath, 'a') as the_file:
+                the_file.write(str(timestamp) + ' ' + str(order['symbol']) + ' ' + str(order['origQty']) + ' ' + str(order['side']) + ' ' + str(order['cummulativeQuoteQty']) + '\n')
+
+def sendIncomeRepEmail():
+    profitOrLoss = 0.0
+
+    with open(txtFilePath, 'r') as fp:
+        content = fp.read()
+        records = str(MIMEText(content)).splitlines()
+
+        for index,record in enumerate(records):
+            if(record.startswith('20')):
+                if((record.split(' ')[-2]) == 'SELL' and records[index-1].startswith('20')):
+                    profitOrLoss = profitOrLoss + ( float(record.split(' ')[-1]) - float((records[index-1]).split(' ')[-1]))
+        content = content + ('\n\n Profit or Loss : '+ str(profitOrLoss))
+        msg = MIMEText(content)
+
+    msg['Subject'] = '24hr Income Report'
+    msg['From'] = 'hesithsilva@gmail.com'
+    msg['To'] = 'hesithgamer@gmail.com'
+
+    s = smtplib.SMTP('smtp.gmail.com',587)
+    s.ehlo()
+    s.starttls()
+    s.login('hesithsilva@gmail.com','zxke dqkw mhng iowk')
+    s.sendmail('hesithsilva@gmail.com', ['hesithgamer@gmail.com'], msg.as_string())
+    s.quit()
 
 def main():
     global isBought
@@ -355,7 +392,6 @@ def main():
             if(trendingCoin != ''):
                 if(targetSymbol != trendingCoin and isBought == False):
                     targetSymbol = trendingCoin
-
 
             if(targetTimeframe == timeframe.ONE_MIN):
                 if(sec == 0): #MINUTE
