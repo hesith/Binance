@@ -87,8 +87,12 @@ def writeProfits(order):
 
 def sendBuyOrder():
     global latestFuturesCoin
-    return client.create_order(symbol = latestFuturesCoin+'USDT', side = 'BUY', type = 'MARKET', quoteOrderQty = float(targetInvestment))
 
+    try:
+        return client.create_order(symbol = latestFuturesCoin+'USDT', side = 'BUY', type = 'MARKET', quoteOrderQty = float(targetInvestment))
+    except:
+        return
+    
 def sendSellOrder():
     if(float(boughtQty) > 0):
         return client.create_order(symbol = latestFuturesCoin+'USDT', side = 'SELL', type = 'MARKET', quantity = float(boughtQty))
