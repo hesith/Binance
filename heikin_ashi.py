@@ -132,14 +132,20 @@ coinList = []
 def setTopGainerCoins():
     global coinList
     global trendingCoins
+    global unconsideredCoins
 
     coinList.clear()
     trendingCoins.clear()
+    unconsideredCoins.clear()
 
     for symbol in client.get_all_tickers():
-        if(symbol['symbol'].endswith('USDT')):
-            hr24Gain = float(client.get_ticker(symbol=symbol['symbol'])['priceChangePercent'])
-            coinList.append({'symbol':symbol['symbol'], '24hrGain': hr24Gain})
+        if(symbol['symbol'].endswith('USDT') and not symbol['symbol'].endswith('UPUSDT') and not symbol['symbol'].endswith('DOWNUSDT')):
+            symbolTicker = client.get_ticker(symbol=symbol['symbol'])
+            hr24Gain = float(symbolTicker['priceChangePercent'])
+            price = float(symbolTicker['lastPrice'])
+
+            if(price != 0.0):
+                coinList.append({'symbol':symbol['symbol'], '24hrGain': hr24Gain})
     
     coinList = sorted(coinList, key= lambda k: k['24hrGain'], reverse=True)
 
@@ -149,10 +155,13 @@ def setTopGainerCoins():
         #if(index == 29):
             #break
 
-        if(99 < index and index < 149):
-            trendingCoins.append(coin['symbol'])
-        elif( index == 149):
-            break
+        #if((len(coinList) - 30) < index and index < (len(coinList))):
+            #trendingCoins.append(coin['symbol'])
+        #if(149 < index and index < 249):
+            #trendingCoins.append(coin['symbol'])
+        #elif( index == 249):
+            #break
+        trendingCoins.append(coin['symbol'])
 
     return
     
@@ -181,16 +190,19 @@ def coinEligibilityCheck(): # check for Pattern and MA
             queue = getHAcandleQueue(symbol=coin, roundFactor=int(roundFloor['roundFactor']), floorFactor=int(roundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, klineLimit=20)
             ma = getMovingAverage(symbol=coin, roundFactor=int(roundFloor['roundFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, limit=20)
             lastPrice = float(client.get_ticker(symbol=coin)['lastPrice'])
+            percentageDiff = ((ma - lastPrice) / ((ma + lastPrice)/2)) * 100
 
             isMovingAvgEligible = True if (lastPrice < ma) else False
             isPatternEligible = checkHApattern(HAcandleQueue=queue, pattern=heikinAshiCandlePattern.RRRG)
+            isPercDiffEligible = True if (percentageDiff >= 0.5) else False
 
             print((bcolors.WARNING+str(coin)+bcolors.ENDC))
             print('Heikin Ashi queue : ' + (' '.join(str(c) for c in queue)))
             print('Moving Average : ' + str(ma))
-            print('Last Price : ' + str(lastPrice) + '\n\n')
+            print('Last Price : ' + str(lastPrice))
+            print('Percentage Difference : ' + str(percentageDiff) + ' %'  + '\n\n')
 
-            if(isPatternEligible and isMovingAvgEligible):
+            if(isPatternEligible and isMovingAvgEligible and isPercDiffEligible):
                 print((bcolors.WARNING+str(coin)+bcolors.ENDC) + ' is Eligible \n')
                 return coin
 
@@ -201,12 +213,20 @@ def coinEligibilityCheck(): # check for Pattern and MA
 
 def sendBuyOrder():
     print(bcolors.OKGREEN+'Buying '+bcolors.ENDC + str(targetSymbol))
-    return client.create_order(symbol = targetSymbol, side = 'BUY', type = 'MARKET', quoteOrderQty = float(targetInvestment))
+
+    try:
+        return client.create_order(symbol = targetSymbol, side = 'BUY', type = 'MARKET', quoteOrderQty = float(targetInvestment))
+    except Exception as error:
+        print(bcolors.FAIL+str(error)+bcolors.ENDC)
 
 def sendSellOrder():
     if(float(boughtQty) > 0):
         print(bcolors.FAIL+'Selling '+bcolors.ENDC + str(targetSymbol))
-        return client.create_order(symbol = targetSymbol, side = 'SELL', type = 'MARKET', quantity = float(boughtQty))
+
+        try:
+            return client.create_order(symbol = targetSymbol, side = 'SELL', type = 'MARKET', quantity = float(boughtQty))
+        except Exception as error:
+            print(bcolors.FAIL+str(error)+bcolors.ENDC)
     return
 
 def writeProfits(order, timestamp: datetime):
@@ -262,6 +282,36 @@ def sendIncomeRepEmail():
         s.sendmail('hesithsilva@gmail.com', ['hesithgamer@gmail.com'], msg.as_string())
         s.quit()
 
+unconsideredCoins = []
+
+def refineTrendingCoins():
+    global unconsideredCoins
+    global trendingCoins
+
+    while (True):
+        time.sleep(0.1)
+        if(len(trendingCoins) > 0 ):
+            for index, coin in enumerate(trendingCoins):
+                roundFloor = calculateRoundFloorFactors(coin)
+                ma = getMovingAverage(symbol=coin, roundFactor=int(roundFloor['roundFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, limit=20)
+                lastPrice = float(client.get_ticker(symbol=coin)['lastPrice'])
+                percentageDiff = ((ma - lastPrice) / ((ma + lastPrice)/2)) * 100
+
+                if(percentageDiff < 0.5):
+                    unconsideredCoins.append(trendingCoins.pop(index))
+                    print(str(coin) + 'swapped to Unconsidered. Perc Diff : ' + str(percentageDiff))
+
+        if(len(unconsideredCoins) > 0 ):
+            for index, coin in enumerate(unconsideredCoins):
+                roundFloor = calculateRoundFloorFactors(coin)
+                ma = getMovingAverage(symbol=coin, roundFactor=int(roundFloor['roundFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, limit=20)
+                lastPrice = float(client.get_ticker(symbol=coin)['lastPrice'])
+                percentageDiff = ((ma - lastPrice) / ((ma + lastPrice)/2)) * 100
+
+                if(percentageDiff >= 0.5):
+                    trendingCoins.append(unconsideredCoins.pop(index))
+                    print(str(coin) + 'swapped to Trending. Perc Diff : ' + str(percentageDiff))
+
 
 def init():
     global isBought
@@ -270,11 +320,17 @@ def init():
     pool = ThreadPool(processes=1)
     pool.apply_async(setTopGainerCoins, ()) 
 
+    pool2 = ThreadPool(processes=1)
+    pool2.apply_async(refineTrendingCoins, ()) 
+
     global prevSecond
     prevSecond = -1
 
     while True:
-        time.sleep(0.83)
+        if(isBought == False):
+            time.sleep(0.75)
+        else:
+            time.sleep(0.25)
 
         serverTimestamp = (client.get_server_time()['serverTime']) / 1000.0
         localTime = datetime.fromtimestamp(timestamp=serverTimestamp)
@@ -284,6 +340,8 @@ def init():
 
         if(localTime.second != prevSecond):
             prevSecond = localTime.second
+
+            #print(localTime.second)
 
             if(isBought == True):
                 roundFloor = calculateRoundFloorFactors(targetSymbol)
