@@ -144,9 +144,14 @@ def setTopGainerCoins():
     coinList = sorted(coinList, key= lambda k: k['24hrGain'], reverse=True)
 
     for index,coin in enumerate(coinList):
-        trendingCoins.append(coin['symbol'])
+        #trendingCoins.append(coin['symbol'])
 
-        if(index == 4):
+        #if(index == 29):
+            #break
+
+        if(99 < index and index < 149):
+            trendingCoins.append(coin['symbol'])
+        elif( index == 149):
             break
 
     return
@@ -164,7 +169,12 @@ def checkHApattern(HAcandleQueue : list, pattern : heikinAshiCandlePattern):
 
 def coinEligibilityCheck(): # check for Pattern and MA
     if(len(trendingCoins) > 0):
-        print(bcolors.FAIL+'COIN ELIGIBILITY SUMMARY'+bcolors.ENDC + '\n')
+        serverTimestamp = (client.get_server_time()['serverTime']) / 1000.0
+        localTime = datetime.fromtimestamp(timestamp=serverTimestamp)
+
+        print('\n')
+        print(bcolors.FAIL+'COIN ELIGIBILITY SUMMARY'+bcolors.ENDC )
+        print(str(localTime) + '\n')
 
         for coin in trendingCoins:
             roundFloor = calculateRoundFloorFactors(coin)
@@ -172,7 +182,7 @@ def coinEligibilityCheck(): # check for Pattern and MA
             ma = getMovingAverage(symbol=coin, roundFactor=int(roundFloor['roundFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, limit=20)
             lastPrice = float(client.get_ticker(symbol=coin)['lastPrice'])
 
-            isMovingAvgEligible = True if (lastPrice > ma) else False
+            isMovingAvgEligible = True if (lastPrice < ma) else False
             isPatternEligible = checkHApattern(HAcandleQueue=queue, pattern=heikinAshiCandlePattern.RRRG)
 
             print((bcolors.WARNING+str(coin)+bcolors.ENDC))
@@ -186,14 +196,16 @@ def coinEligibilityCheck(): # check for Pattern and MA
 
         return ''
     else:
-        print(bcolors.FAIL+'TRENDING COINS ARE NOT CAPTURED. UNABLE TO PERFORM ELIGIBILITY CHECK.'+bcolors.ENDC + '\n\n')
+        print("\n" + bcolors.FAIL+'TRENDING COINS ARE NOT CAPTURED. UNABLE TO PERFORM ELIGIBILITY CHECK.'+bcolors.ENDC + '\n\n')
         return ''
 
 def sendBuyOrder():
+    print(bcolors.OKGREEN+'Buying '+bcolors.ENDC + str(targetSymbol))
     return client.create_order(symbol = targetSymbol, side = 'BUY', type = 'MARKET', quoteOrderQty = float(targetInvestment))
 
 def sendSellOrder():
     if(float(boughtQty) > 0):
+        print(bcolors.FAIL+'Selling '+bcolors.ENDC + str(targetSymbol))
         return client.create_order(symbol = targetSymbol, side = 'SELL', type = 'MARKET', quantity = float(boughtQty))
     return
 
@@ -239,7 +251,7 @@ def sendIncomeRepEmail():
             content = content + ('\n\n Profit or Loss : '+ str(profitOrLoss))
             msg = MIMEText(content)
 
-        msg['Subject'] = ' Income Report until' + str(localTime.hour) + ' : ' + str(localTime.minute)
+        msg['Subject'] = ' Income Report until ' + str(localTime.hour) + ' : ' + str(localTime.minute)
         msg['From'] = 'hesithsilva@gmail.com'
         msg['To'] = 'hesithgamer@gmail.com'
 
@@ -258,32 +270,61 @@ def init():
     pool = ThreadPool(processes=1)
     pool.apply_async(setTopGainerCoins, ()) 
 
+    global prevSecond
+    prevSecond = -1
+
     while True:
-        time.sleep(0.5)
+        time.sleep(0.83)
 
         serverTimestamp = (client.get_server_time()['serverTime']) / 1000.0
         localTime = datetime.fromtimestamp(timestamp=serverTimestamp)
 
-        if (localTime.minute % 5 == 0 and localTime.second == 0): #5m iteration
-            if(isBought == False):
-                targetSymbol = coinEligibilityCheck()
+        if(prevSecond == -1):
+            prevSecond = localTime.second
 
-                if(targetSymbol != ''):
-                    writeProfits(sendBuyOrder(), localTime)
-            else:
+        if(localTime.second != prevSecond):
+            prevSecond = localTime.second
+
+            if(isBought == True):
                 roundFloor = calculateRoundFloorFactors(targetSymbol)
-                lastHAcandle = getHAcandleQueue(symbol=targetSymbol, roundFactor=int(roundFloor['roundFactor']), floorFactor=int(roundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, klineLimit=2)[-1]
-            
-                if(lastHAcandle == 'R'):
+                ma = getMovingAverage(symbol=targetSymbol, roundFactor=int(roundFloor['roundFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, limit=20)
+                lastPrice = float(client.get_ticker(symbol=targetSymbol)['lastPrice'])
+
+                if( lastPrice > ma):
+                    print("\n Last Price(" + str(lastPrice) + ") > Moving Average(" + str(ma) + ")\n" )
                     writeProfits(sendSellOrder(), localTime)
 
-        if (localTime.minute == 0 and localTime.second == 0): #1h iteration
-            pool = ThreadPool(processes=1)
-            pool.apply_async(setTopGainerCoins, ())
 
-        if (localTime.hour % 2 == 0 and localTime.minute == 0 and localTime.second == 0): #2h iteration
-            pool = ThreadPool(processes=1)
-            pool.apply_async(setTopGainerCoins, ())
+            if(localTime.second == 0): #1m iteration
+                if(isBought == True):
+                    roundFloor = calculateRoundFloorFactors(targetSymbol)
+                    queue1m = getHAcandleQueue(symbol=targetSymbol, roundFactor=int(roundFloor['roundFactor']), floorFactor=int(roundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_1MINUTE, klineLimit=7)
+
+                    print('Heikin Ashi queue (1min) : ' + (' '.join(str(c) for c in queue1m)))
+
+                    if(queue1m[-3] == 'R' and queue1m[-2] == 'R' and queue1m[-1] == 'R'):
+                        writeProfits(sendSellOrder(), localTime)
+
+            if (localTime.minute % 5 == 0 and localTime.second == 0): #5m iteration
+                if(isBought == False):
+                    targetSymbol = coinEligibilityCheck()
+
+                    if(targetSymbol != ''):
+                        writeProfits(sendBuyOrder(), localTime)
+                else:
+                    roundFloor = calculateRoundFloorFactors(targetSymbol)
+                    queue5m = getHAcandleQueue(symbol=targetSymbol, roundFactor=int(roundFloor['roundFactor']), floorFactor=int(roundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, klineLimit=4)
+
+                    if(queue5m[-1] == 'R'):
+                        writeProfits(sendSellOrder(), localTime)
+
+            if (localTime.minute == 0 and localTime.second == 0): #1h iteration
+                pool = ThreadPool(processes=1)
+                pool.apply_async(setTopGainerCoins, ())
+
+            if (localTime.hour % 2 == 0 and localTime.minute == 0 and localTime.second == 0): #2h iteration
+                pool = ThreadPool(processes=1)
+                pool.apply_async(sendIncomeRepEmail, ())
 
 if __name__ == '__main__':
     init()
