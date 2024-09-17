@@ -100,7 +100,7 @@ def getHAcandleQueue(symbol, roundFactor, floorFactor, klineTimeframe, klineLimi
 
     for index,kline in enumerate(klines):
 
-        if(index > 0 and index < (klineLimit-1)):
+        if(index > 0 and index < (klineLimit)):
 
             prevHAOpenPrice = round(float(klines[index-1][1]),roundFactor)
             prevHAClosePrice = round(float(klines[index-1][4]),roundFactor)
@@ -115,12 +115,20 @@ def getHAcandleQueue(symbol, roundFactor, floorFactor, klineTimeframe, klineLimi
 
             difference = roundedClose - roundedOpen
 
-            if(difference > 0):
-                haCandleQueue.append('G')
-            elif(difference == 0):
-                haCandleQueue.append('R')
+            if(index == (klineLimit - 1)):
+                if(difference > 0):
+                    haCandleQueue.append('g')
+                elif(difference == 0):
+                    haCandleQueue.append('r')
+                else:
+                    haCandleQueue.append('r')
             else:
-                haCandleQueue.append('R')
+                if(difference > 0):
+                    haCandleQueue.append('G')
+                elif(difference == 0):
+                    haCandleQueue.append('R')
+                else:
+                    haCandleQueue.append('R')
 
     return(haCandleQueue) 
 
@@ -171,7 +179,7 @@ class heikinAshiCandlePattern:
 def checkHApattern(HAcandleQueue : list, pattern : heikinAshiCandlePattern):
 
     if( pattern == heikinAshiCandlePattern.RRRG ):
-        if(HAcandleQueue[-4] == 'R' and HAcandleQueue[-3] == 'R' and HAcandleQueue[-2] == 'R' and HAcandleQueue[-1] == 'G'):
+        if(HAcandleQueue[-5] == 'R' and HAcandleQueue[-4] == 'R' and HAcandleQueue[-3] == 'R' and HAcandleQueue[-2] == 'G' and HAcandleQueue[-1] == 'g'):
             return True
         else:
             return False
@@ -373,7 +381,7 @@ def init():
                     roundFloor = calculateRoundFloorFactors(targetSymbol)
                     queue5m = getHAcandleQueue(symbol=targetSymbol, roundFactor=int(roundFloor['roundFactor']), floorFactor=int(roundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, klineLimit=4)
 
-                    if(queue5m[-1] == 'R'):
+                    if(queue5m[-2] == 'R'):
                         writeProfits(sendSellOrder(), localTime)
 
             if (localTime.minute == 0 and localTime.second == 0): #1h iteration
