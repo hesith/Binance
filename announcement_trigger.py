@@ -42,7 +42,7 @@ class bcolors:
 
 
 while (True):
-    time.sleep(0.009)
+    time.sleep(4)
 
     initialReq = requests.get(URL, headers=headers)
     initialSoup = BeautifulSoup(initialReq.content, 'html5lib') # If this line causes an error, run 'pip install html5lib' or install html5lib

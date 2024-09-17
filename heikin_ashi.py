@@ -353,15 +353,15 @@ def init():
                     writeProfits(sendSellOrder(), localTime)
 
 
-            if(localTime.second == 0): #1m iteration
-                if(isBought == True):
-                    roundFloor = calculateRoundFloorFactors(targetSymbol)
-                    queue1m = getHAcandleQueue(symbol=targetSymbol, roundFactor=int(roundFloor['roundFactor']), floorFactor=int(roundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_1MINUTE, klineLimit=7)
+            #if(localTime.second == 0): #1m iteration
+                #if(isBought == True):
+                    #roundFloor = calculateRoundFloorFactors(targetSymbol)
+                    #queue1m = getHAcandleQueue(symbol=targetSymbol, roundFactor=int(roundFloor['roundFactor']), floorFactor=int(roundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_1MINUTE, klineLimit=7)
 
-                    print('Heikin Ashi queue (1min) : ' + (' '.join(str(c) for c in queue1m)))
+                    #print('Heikin Ashi queue (1min) : ' + (' '.join(str(c) for c in queue1m)))
 
-                    if(queue1m[-3] == 'R' and queue1m[-2] == 'R' and queue1m[-1] == 'R'):
-                        writeProfits(sendSellOrder(), localTime)
+                    #if(queue1m[-3] == 'R' and queue1m[-2] == 'R' and queue1m[-1] == 'R'):
+                        #writeProfits(sendSellOrder(), localTime)
 
             if (localTime.minute % 5 == 0 and localTime.second == 0): #5m iteration
                 if(isBought == False):
