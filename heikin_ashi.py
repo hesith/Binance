@@ -19,7 +19,6 @@ config = load_config('config.yml')
 
 pool = ThreadPool(processes=cpu_count() - 1)
 
-
 class timeframe:
     ONE_MIN = '1m'
     THREE_MIN = '3m'
@@ -49,7 +48,8 @@ targetSymbol = ''
 isBought = False
 targetInvestment = 10 #USDT
 boughtQty = '0.0'
-targetPercDiff = 1.0
+targetPercDiff = 0.4
+targetPercDiffCeil = 9999.99
 
 def calculateRoundFloorFactors(symbol):
 
@@ -96,9 +96,10 @@ def getMovingAverage(symbol, roundFactor, klineTimeframe, limit : int): # limit 
     return round(movingAvg,roundFactor)
 
 
-def getHAcandleQueue(symbol, roundFactor, floorFactor, klineTimeframe, klineLimit : int):
+def getHAcandleQueue(symbol, roundFactor, floorFactor, klineTimeframe, klineLimit : int, returnHeightQueue = False):
 
     haCandleQueue = []
+    haCandleHeights = []
 
     klines = client.get_historical_klines(symbol=str(symbol), interval= klineTimeframe, limit=klineLimit)
 
@@ -118,6 +119,7 @@ def getHAcandleQueue(symbol, roundFactor, floorFactor, klineTimeframe, klineLimi
             roundedOpen = math.floor(open * floorFactor)/(floorFactor * 1.0)
 
             difference = roundedClose - roundedOpen
+            haCandleHeights.append(difference)
 
             if(index == (klineLimit - 1)):
                 if(difference > 0):
@@ -134,12 +136,15 @@ def getHAcandleQueue(symbol, roundFactor, floorFactor, klineTimeframe, klineLimi
                 else:
                     haCandleQueue.append('R')
 
-    return(haCandleQueue) 
-
+    if(returnHeightQueue == False):
+        return(haCandleQueue) 
+    else:
+        return(haCandleHeights)
 
 
 trendingCoins = []
 coinList = []
+
 
 def setTopGainerCoins():
     global coinList
@@ -159,7 +164,8 @@ def setTopGainerCoins():
             if(price != 0.0):
                 coinList.append({'symbol':symbol['symbol'], '24hrGain': hr24Gain})
     
-    coinList = sorted(coinList, key= lambda k: k['24hrGain'], reverse=True)
+    #coinList = sorted(coinList, key= lambda k: k['24hrGain'], reverse=True) #gainers first
+    coinList = sorted(coinList, key= lambda k: k['24hrGain'], reverse=False) #losers first
 
     for index,coin in enumerate(coinList):
         #trendingCoins.append(coin['symbol'])
@@ -176,7 +182,7 @@ def setTopGainerCoins():
         trendingCoins.append(coin['symbol'])
 
     return
-    
+
 class heikinAshiCandlePattern:
     RRRG = 'RRRG',
     G = 'G'
@@ -202,7 +208,8 @@ def coinEligibilityCheck(): # check for Pattern and MA
         print('\n')
         print(bcolors.FAIL+'COIN ELIGIBILITY SUMMARY'+bcolors.ENDC )
         print(str(localTime) + '\n')
-        print(bcolors.OKBLUE+ str(trendingCoins) +bcolors.ENDC + '\n')
+        print(bcolors.OKBLUE+ str(trendingCoins) +bcolors.ENDC)
+        print(bcolors.OKBLUE+ 'Length : ' + str(len(trendingCoins)) +bcolors.ENDC + '\n')
 
         for coin in trendingCoins:
             btcRoundFloor = calculateRoundFloorFactors('BTCUSDT')
@@ -228,7 +235,7 @@ def coinEligibilityCheck(): # check for Pattern and MA
 
             isMovingAvgEligible = True if (lastPrice < ma) else False
             isPatternEligible = checkHApattern(HAcandleQueue=queue, pattern=heikinAshiCandlePattern.RRRG)
-            isPercDiffEligible = True if (percentageDiff >= targetPercDiff) else False
+            isPercDiffEligible = True if ((percentageDiff >= targetPercDiff) and (percentageDiff <= targetPercDiffCeil) )else False
 
             print((bcolors.WARNING+str(coin)+bcolors.ENDC))
             print('Heikin Ashi queue : ' + (' '.join(str(c) for c in queue)))
@@ -323,40 +330,42 @@ def refineTrendingCoins():
     global unconsideredCoins
     global trendingCoins
 
-    while (True):
-        time.sleep(0.1)
-        if(len(trendingCoins) > 0 ):
-            for index, coin in enumerate(trendingCoins):
-                roundFloor = calculateRoundFloorFactors(coin)
-                ma = getMovingAverage(symbol=coin, roundFactor=int(roundFloor['roundFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, limit=20)
-                lastPrice = float(client.get_ticker(symbol=coin)['lastPrice'])
-                percentageDiff = ((ma - lastPrice) / ((ma + lastPrice)/2)) * 100
+    try:
+        while (True):
+            time.sleep(0.1)
+            if(len(trendingCoins) > 0 ):
+                for index, coin in enumerate(trendingCoins):
+                    roundFloor = calculateRoundFloorFactors(coin)
+                    ma = getMovingAverage(symbol=coin, roundFactor=int(roundFloor['roundFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, limit=20)
+                    lastPrice = float(client.get_ticker(symbol=coin)['lastPrice'])
+                    percentageDiff = ((ma - lastPrice) / ((ma + lastPrice)/2)) * 100
 
-                if(percentageDiff < targetPercDiff):
-                    unconsideredCoins.append(trendingCoins.pop(index))
-                    print(str(coin) + 'swapped to Unconsidered. Perc Diff : ' + str(percentageDiff))
+                    if((percentageDiff < targetPercDiff) or (percentageDiff > targetPercDiffCeil)):
+                        unconsideredCoins.append(trendingCoins.pop(index))
+                        print(str(coin) + 'swapped to Unconsidered. Perc Diff : ' + str(percentageDiff))
 
-        if(len(unconsideredCoins) > 0 ):
-            for index, coin in enumerate(unconsideredCoins):
-                roundFloor = calculateRoundFloorFactors(coin)
-                ma = getMovingAverage(symbol=coin, roundFactor=int(roundFloor['roundFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, limit=20)
-                lastPrice = float(client.get_ticker(symbol=coin)['lastPrice'])
-                percentageDiff = ((ma - lastPrice) / ((ma + lastPrice)/2)) * 100
+            if(len(unconsideredCoins) > 0 ):
+                for index, coin in enumerate(unconsideredCoins):
+                    roundFloor = calculateRoundFloorFactors(coin)
+                    ma = getMovingAverage(symbol=coin, roundFactor=int(roundFloor['roundFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, limit=20)
+                    lastPrice = float(client.get_ticker(symbol=coin)['lastPrice'])
+                    percentageDiff = ((ma - lastPrice) / ((ma + lastPrice)/2)) * 100
 
-                if(percentageDiff >= targetPercDiff):
-                    trendingCoins.append(unconsideredCoins.pop(index))
-                    print(str(coin) + 'swapped to Trending. Perc Diff : ' + str(percentageDiff))
-
+                    if((percentageDiff >= targetPercDiff) and (percentageDiff <= targetPercDiffCeil)):
+                        trendingCoins.append(unconsideredCoins.pop(index))
+                        print(str(coin) + 'swapped to Trending. Perc Diff : ' + str(percentageDiff))
+    except:
+        refineTrendingCoins()
 
 def init():
     global isBought
     global targetSymbol
 
-    pool = ThreadPool(processes=1)
+    #pool = ThreadPool(processes=1)
     pool.apply_async(setTopGainerCoins, ()) 
 
-    pool2 = ThreadPool(processes=1)
-    pool2.apply_async(refineTrendingCoins, ()) 
+    #pool2 = ThreadPool(processes=1)
+    pool.apply_async(refineTrendingCoins, ()) 
 
     global prevSecond
     prevSecond = -1
@@ -407,16 +416,20 @@ def init():
                 else:
                     roundFloor = calculateRoundFloorFactors(targetSymbol)
                     queue5m = getHAcandleQueue(symbol=targetSymbol, roundFactor=int(roundFloor['roundFactor']), floorFactor=int(roundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, klineLimit=4)
+                    heightsQueue5m = getHAcandleQueue(symbol=targetSymbol, roundFactor=int(roundFloor['roundFactor']), floorFactor=int(roundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, klineLimit=4, returnHeightQueue=True)
 
-                    if(queue5m[-2] == 'R'):
+                    if(queue5m[-2] == 'R' or (float(heightsQueue5m[-2]) < float(heightsQueue5m[-3])) ):
+                        print('\n' + bcolors.FAIL + str(targetSymbol) + 'HA Queue : '+ str(queue5m) +bcolors.ENDC )
+                        print('\n' + bcolors.FAIL + str(targetSymbol) + 'HA Heights Queue : '+ str(heightsQueue5m) +bcolors.ENDC )
+
                         writeProfits(sendSellOrder(), localTime)
 
             if (localTime.minute == 0 and localTime.second == 0): #1h iteration
-                pool = ThreadPool(processes=1)
+                #pool = ThreadPool(processes=1)
                 pool.apply_async(setTopGainerCoins, ())
 
             if (localTime.hour % 2 == 0 and localTime.minute == 0 and localTime.second == 0): #2h iteration
-                pool = ThreadPool(processes=1)
+                #pool = ThreadPool(processes=1)
                 pool.apply_async(sendIncomeRepEmail, ())
 
 if __name__ == '__main__':
