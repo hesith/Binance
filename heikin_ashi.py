@@ -1,4 +1,5 @@
 from email.mime.text import MIMEText
+from multiprocessing import cpu_count
 from multiprocessing.pool import ThreadPool
 import smtplib
 from threading import Thread
@@ -15,6 +16,9 @@ import os.path
 
 # loads local configuration
 config = load_config('config.yml')
+
+pool = ThreadPool(processes=cpu_count() - 1)
+
 
 class timeframe:
     ONE_MIN = '1m'
@@ -45,7 +49,7 @@ targetSymbol = ''
 isBought = False
 targetInvestment = 10 #USDT
 boughtQty = '0.0'
-
+targetPercDiff = 1.0
 
 def calculateRoundFloorFactors(symbol):
 
@@ -174,7 +178,8 @@ def setTopGainerCoins():
     return
     
 class heikinAshiCandlePattern:
-    RRRG = 'RRRG'
+    RRRG = 'RRRG',
+    G = 'G'
 
 def checkHApattern(HAcandleQueue : list, pattern : heikinAshiCandlePattern):
 
@@ -183,7 +188,12 @@ def checkHApattern(HAcandleQueue : list, pattern : heikinAshiCandlePattern):
             return True
         else:
             return False
-
+    elif( pattern == heikinAshiCandlePattern.G):
+        if(HAcandleQueue[-2] == 'G' and HAcandleQueue[-1] == 'g'):
+            return True
+        else:
+            return False
+        
 def coinEligibilityCheck(): # check for Pattern and MA
     if(len(trendingCoins) > 0):
         serverTimestamp = (client.get_server_time()['serverTime']) / 1000.0
@@ -192,25 +202,42 @@ def coinEligibilityCheck(): # check for Pattern and MA
         print('\n')
         print(bcolors.FAIL+'COIN ELIGIBILITY SUMMARY'+bcolors.ENDC )
         print(str(localTime) + '\n')
+        print(bcolors.OKBLUE+ str(trendingCoins) +bcolors.ENDC + '\n')
 
         for coin in trendingCoins:
+            btcRoundFloor = calculateRoundFloorFactors('BTCUSDT')
+            btcQueue = getHAcandleQueue(symbol='BTCUSDT', roundFactor=int(btcRoundFloor['roundFactor']), floorFactor=int(btcRoundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, klineLimit=7)
+            isBitcoinTrendEligible = checkHApattern(HAcandleQueue=btcQueue, pattern=heikinAshiCandlePattern.G)
+
+            if( not isBitcoinTrendEligible ):
+                continue
+
+            #btcma = getMovingAverage(symbol='BTCUSDT', roundFactor=int(btcRoundFloor['roundFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, limit=20)
+            #btcLastPrice = float(client.get_ticker(symbol='BTCUSDT')['lastPrice'])
+            #isBitcoinMovingAvgEligible = True if (btcLastPrice > btcma) else False
+
+            #if( not isBitcoinMovingAvgEligible ):
+            #    continue
+
             roundFloor = calculateRoundFloorFactors(coin)
             queue = getHAcandleQueue(symbol=coin, roundFactor=int(roundFloor['roundFactor']), floorFactor=int(roundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, klineLimit=20)
             ma = getMovingAverage(symbol=coin, roundFactor=int(roundFloor['roundFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, limit=20)
             lastPrice = float(client.get_ticker(symbol=coin)['lastPrice'])
             percentageDiff = ((ma - lastPrice) / ((ma + lastPrice)/2)) * 100
+            
 
             isMovingAvgEligible = True if (lastPrice < ma) else False
             isPatternEligible = checkHApattern(HAcandleQueue=queue, pattern=heikinAshiCandlePattern.RRRG)
-            isPercDiffEligible = True if (percentageDiff >= 0.5) else False
+            isPercDiffEligible = True if (percentageDiff >= targetPercDiff) else False
 
             print((bcolors.WARNING+str(coin)+bcolors.ENDC))
             print('Heikin Ashi queue : ' + (' '.join(str(c) for c in queue)))
             print('Moving Average : ' + str(ma))
             print('Last Price : ' + str(lastPrice))
-            print('Percentage Difference : ' + str(percentageDiff) + ' %'  + '\n\n')
+            print('Percentage Difference : ' + str(percentageDiff) + ' %' )
+            print('Bitcoin Trend : ' + (' '.join(str(c) for c in btcQueue)) + '\n\n')
 
-            if(isPatternEligible and isMovingAvgEligible and isPercDiffEligible):
+            if(isPatternEligible and isMovingAvgEligible and isPercDiffEligible and isBitcoinTrendEligible):
                 print((bcolors.WARNING+str(coin)+bcolors.ENDC) + ' is Eligible \n')
                 return coin
 
@@ -305,7 +332,7 @@ def refineTrendingCoins():
                 lastPrice = float(client.get_ticker(symbol=coin)['lastPrice'])
                 percentageDiff = ((ma - lastPrice) / ((ma + lastPrice)/2)) * 100
 
-                if(percentageDiff < 0.5):
+                if(percentageDiff < targetPercDiff):
                     unconsideredCoins.append(trendingCoins.pop(index))
                     print(str(coin) + 'swapped to Unconsidered. Perc Diff : ' + str(percentageDiff))
 
@@ -316,7 +343,7 @@ def refineTrendingCoins():
                 lastPrice = float(client.get_ticker(symbol=coin)['lastPrice'])
                 percentageDiff = ((ma - lastPrice) / ((ma + lastPrice)/2)) * 100
 
-                if(percentageDiff >= 0.5):
+                if(percentageDiff >= targetPercDiff):
                     trendingCoins.append(unconsideredCoins.pop(index))
                     print(str(coin) + 'swapped to Trending. Perc Diff : ' + str(percentageDiff))
 
