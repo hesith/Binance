@@ -101,7 +101,10 @@ def getHAcandleQueue(symbol, roundFactor, floorFactor, klineTimeframe, klineLimi
     haCandleQueue = []
     haCandleHeights = []
 
-    klines = client.get_historical_klines(symbol=str(symbol), interval= klineTimeframe, limit=klineLimit)
+    try:
+        klines = client.get_historical_klines(symbol=str(symbol), interval= klineTimeframe, limit=klineLimit)
+    except:
+        klines = []
 
     for index,kline in enumerate(klines):
 
@@ -164,8 +167,8 @@ def setTopGainerCoins():
             if(price != 0.0):
                 coinList.append({'symbol':symbol['symbol'], '24hrGain': hr24Gain})
     
-    #coinList = sorted(coinList, key= lambda k: k['24hrGain'], reverse=True) #gainers first
-    coinList = sorted(coinList, key= lambda k: k['24hrGain'], reverse=False) #losers first
+    coinList = sorted(coinList, key= lambda k: k['24hrGain'], reverse=True) #gainers first
+    #coinList = sorted(coinList, key= lambda k: k['24hrGain'], reverse=False) #loosers first
 
     for index,coin in enumerate(coinList):
         #trendingCoins.append(coin['symbol'])
@@ -213,7 +216,13 @@ def coinEligibilityCheck(): # check for Pattern and MA
 
         for coin in trendingCoins:
             btcRoundFloor = calculateRoundFloorFactors('BTCUSDT')
-            btcQueue = getHAcandleQueue(symbol='BTCUSDT', roundFactor=int(btcRoundFloor['roundFactor']), floorFactor=int(btcRoundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, klineLimit=7)
+            btcQueue = getHAcandleQueue(symbol='BTCUSDT', roundFactor=int(btcRoundFloor['roundFactor']), floorFactor=int(btcRoundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, klineLimit=20)
+            
+            btcGcount = 0
+            for candle in btcQueue:
+                if(candle == 'G'):
+                    btcGcount += 1
+
             isBitcoinTrendEligible = checkHApattern(HAcandleQueue=btcQueue, pattern=heikinAshiCandlePattern.G)
 
             if( not isBitcoinTrendEligible ):
@@ -232,19 +241,31 @@ def coinEligibilityCheck(): # check for Pattern and MA
             lastPrice = float(client.get_ticker(symbol=coin)['lastPrice'])
             percentageDiff = ((ma - lastPrice) / ((ma + lastPrice)/2)) * 100
             
+            Gcount = 0
+            for candle in queue:
+                if(candle == 'G'):
+                    Gcount += 1
 
             isMovingAvgEligible = True if (lastPrice < ma) else False
             isPatternEligible = checkHApattern(HAcandleQueue=queue, pattern=heikinAshiCandlePattern.RRRG)
             isPercDiffEligible = True if ((percentageDiff >= targetPercDiff) and (percentageDiff <= targetPercDiffCeil) )else False
+
+            if (btcGcount >= (len(btcQueue)//2)) and (Gcount >= (len(queue)//2)):
+                isFollowsBTC = True
+            elif (btcGcount < (len(btcQueue)//2)) and (Gcount < (len(queue)//2)):
+                isFollowsBTC = True
+            else:
+                isFollowsBTC = False
 
             print((bcolors.WARNING+str(coin)+bcolors.ENDC))
             print('Heikin Ashi queue : ' + (' '.join(str(c) for c in queue)))
             print('Moving Average : ' + str(ma))
             print('Last Price : ' + str(lastPrice))
             print('Percentage Difference : ' + str(percentageDiff) + ' %' )
-            print('Bitcoin Trend : ' + (' '.join(str(c) for c in btcQueue)) + '\n\n')
+            print('Bitcoin Trend : ' + (' '.join(str(c) for c in btcQueue)))
+            print((bcolors.OKGREEN+ 'Green Candles ' +bcolors.ENDC) + ': ' + 'BTCUSDT -> ' + str(btcGcount) + ', ' + (bcolors.WARNING+str(coin)+bcolors.ENDC) + ' -> ' + str(Gcount) + '\n\n')
 
-            if(isPatternEligible and isMovingAvgEligible and isPercDiffEligible and isBitcoinTrendEligible):
+            if(isPatternEligible and isMovingAvgEligible and isPercDiffEligible and isBitcoinTrendEligible and isFollowsBTC):
                 print((bcolors.WARNING+str(coin)+bcolors.ENDC) + ' is Eligible \n')
                 return coin
 
@@ -342,7 +363,7 @@ def refineTrendingCoins():
 
                     if((percentageDiff < targetPercDiff) or (percentageDiff > targetPercDiffCeil)):
                         unconsideredCoins.append(trendingCoins.pop(index))
-                        print(str(coin) + 'swapped to Unconsidered. Perc Diff : ' + str(percentageDiff))
+                        #print(str(coin) + 'swapped to Unconsidered. Perc Diff : ' + str(percentageDiff))
 
             if(len(unconsideredCoins) > 0 ):
                 for index, coin in enumerate(unconsideredCoins):
@@ -353,7 +374,7 @@ def refineTrendingCoins():
 
                     if((percentageDiff >= targetPercDiff) and (percentageDiff <= targetPercDiffCeil)):
                         trendingCoins.append(unconsideredCoins.pop(index))
-                        print(str(coin) + 'swapped to Trending. Perc Diff : ' + str(percentageDiff))
+                        #print(str(coin) + 'swapped to Trending. Perc Diff : ' + str(percentageDiff))
     except:
         refineTrendingCoins()
 
@@ -376,8 +397,11 @@ def init():
         else:
             time.sleep(0.25)
 
-        serverTimestamp = (client.get_server_time()['serverTime']) / 1000.0
-        localTime = datetime.fromtimestamp(timestamp=serverTimestamp)
+        try:
+            serverTimestamp = (client.get_server_time()['serverTime']) / 1000.0
+            localTime = datetime.fromtimestamp(timestamp=serverTimestamp)
+        except:
+            localTime = datetime.now()
 
         if(prevSecond == -1):
             prevSecond = localTime.second
@@ -387,14 +411,14 @@ def init():
 
             #print(localTime.second)
 
-            if(isBought == True):
-                roundFloor = calculateRoundFloorFactors(targetSymbol)
-                ma = getMovingAverage(symbol=targetSymbol, roundFactor=int(roundFloor['roundFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, limit=20)
-                lastPrice = float(client.get_ticker(symbol=targetSymbol)['lastPrice'])
+            #if(isBought == True):
+                #roundFloor = calculateRoundFloorFactors(targetSymbol)
+                #ma = getMovingAverage(symbol=targetSymbol, roundFactor=int(roundFloor['roundFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, limit=20)
+                #lastPrice = float(client.get_ticker(symbol=targetSymbol)['lastPrice'])
 
-                if( lastPrice > ma):
-                    print("\n Last Price(" + str(lastPrice) + ") > Moving Average(" + str(ma) + ")\n" )
-                    writeProfits(sendSellOrder(), localTime)
+                #if( lastPrice > ma):
+                    #print("\n Last Price(" + str(lastPrice) + ") > Moving Average(" + str(ma) + ")\n" )
+                    #writeProfits(sendSellOrder(), localTime)
 
 
             #if(localTime.second == 0): #1m iteration
@@ -415,13 +439,15 @@ def init():
                         writeProfits(sendBuyOrder(), localTime)
                 else:
                     roundFloor = calculateRoundFloorFactors(targetSymbol)
-                    queue5m = getHAcandleQueue(symbol=targetSymbol, roundFactor=int(roundFloor['roundFactor']), floorFactor=int(roundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, klineLimit=4)
-                    heightsQueue5m = getHAcandleQueue(symbol=targetSymbol, roundFactor=int(roundFloor['roundFactor']), floorFactor=int(roundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, klineLimit=4, returnHeightQueue=True)
+                    queue5m = getHAcandleQueue(symbol=targetSymbol, roundFactor=int(roundFloor['roundFactor']), floorFactor=int(roundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, klineLimit=10)
+                    heightsQueue5m = getHAcandleQueue(symbol=targetSymbol, roundFactor=int(roundFloor['roundFactor']), floorFactor=int(roundFloor['floorFactor']), klineTimeframe=client.KLINE_INTERVAL_5MINUTE, klineLimit=10, returnHeightQueue=True)
 
-                    if(queue5m[-2] == 'R' or (float(heightsQueue5m[-2]) < float(heightsQueue5m[-3])) ):
-                        print('\n' + bcolors.FAIL + str(targetSymbol) + 'HA Queue : '+ str(queue5m) +bcolors.ENDC )
-                        print('\n' + bcolors.FAIL + str(targetSymbol) + 'HA Heights Queue : '+ str(heightsQueue5m) +bcolors.ENDC )
+                    print('\n' + bcolors.OKBLUE + 'Checking for Selling opportunity..' +bcolors.ENDC )
+                    print('\n' + bcolors.OKBLUE + str(targetSymbol) + ' HA Queue : '+ str(queue5m) +bcolors.ENDC )
+                    print( bcolors.OKBLUE + str(targetSymbol) + ' HA Heights Queue : '+ str(heightsQueue5m) +bcolors.ENDC + '\n' )
 
+                    #if(queue5m[-2] == 'R' or (float(heightsQueue5m[-2]) < float(heightsQueue5m[-3])) ):   
+                    if( (queue5m[-2] == 'R') or ((queue5m[-4] == 'G') and (queue5m[-3] == 'G') and (queue5m[-2] == 'G') and (queue5m[-1] == 'r'))):                                         
                         writeProfits(sendSellOrder(), localTime)
 
             if (localTime.minute == 0 and localTime.second == 0): #1h iteration

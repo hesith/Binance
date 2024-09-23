@@ -42,7 +42,7 @@ class bcolors:
 
 
 while (True):
-    time.sleep(60)
+    time.sleep(1)
 
     initialReq = requests.get(URL, headers=headers)
     initialSoup = BeautifulSoup(initialReq.content, 'html5lib') # If this line causes an error, run 'pip install html5lib' or install html5lib
@@ -88,14 +88,26 @@ def writeProfits(order):
 def sendBuyOrder():
     global latestFuturesCoin
 
+    if(latestFuturesCoin.endswith('USDT')):
+        symb = latestFuturesCoin
+    else:
+        symb = latestFuturesCoin+'USDT'
+
     try:
-        return client.create_order(symbol = latestFuturesCoin+'USDT', side = 'BUY', type = 'MARKET', quoteOrderQty = float(targetInvestment))
+        return client.create_order(symbol = symb, side = 'BUY', type = 'MARKET', quoteOrderQty = float(targetInvestment))
     except:
         return
     
 def sendSellOrder():
+    global latestFuturesCoin
+
+    if(latestFuturesCoin.endswith('USDT')):
+        symb = latestFuturesCoin
+    else:
+        symb = latestFuturesCoin+'USDT'
+
     if(float(boughtQty) > 0):
-        return client.create_order(symbol = latestFuturesCoin+'USDT', side = 'SELL', type = 'MARKET', quantity = float(boughtQty))
+        return client.create_order(symbol = symb, side = 'SELL', type = 'MARKET', quantity = float(boughtQty))
     return
 
 
@@ -108,7 +120,7 @@ def announcement_trigger():
     print('Listening to Binance Announcements...\n\n\n\n\n')
 
     while (True):
-            time.sleep(0.009)
+            time.sleep(10)
 
             if(isBought == False):
                 r = requests.get(URL, headers=headers)
